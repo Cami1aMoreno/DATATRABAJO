@@ -1,0 +1,396 @@
+---
+title: "TRABAJO FINAL - Estadística 2"
+author: "Ana Lucia Silva (20192649), Camila Moreno(20193237), Gian Carlo Prosopio (20193605)"
+date: "1 de diciembre 2021"
+output: html_document
+enconding: "UTF-8"
+---
+#Presentación 
+
+En el presente trabajo de investigación analizaremos la construcción de la esperanza de vida respecto de distintos indicadores recopilados de datos actualizados que oscilan entre el 2015 - 2020. Suscribimos estudiar la esperanza de vida, puesto que en los últimos años ha cobrado mayor relevancia para medir el grado de bienestar humano poblacional y ser un indicador básico para medir el grado de desarrollo regional. Por tanto, nuestro caso de estudio se centrará en los países del mundo (Risco, 2016). El concepto de esperanza de vida planteado anteriormente, es estudiado por la Organización de las Naciones Unidas (ONU), concretamente, a través de la Organización Mundial de la Salud (OMS) (2005). En ese sentido, esta última la define como el número promedio de años que esperaría vivir un(a) recién nacido(a), si es que a medida que transcurre su vida estuviese expuesto a la tasa de mortalidad específicas como la edad, sexo, determinado país o área geográfica. Así pues, por un lado, los determinantes de salud refieren a factores políticos y ambientales que determinan el estado de salud de las poblaciones, y, por otro lado, los determinantes sociales refieren a la pobreza, crecimiento poblacional, analfabetización, etc. (Banco Mundial, 2003).
+
+Por todo ello, planteamos dos conceptos que nos ayudarán a realizar nuestra hipótesis: desigualdad social y contaminación, recopiladas de la data del Banco Mundial, a través de su portal web, además de la relevancia estratégica de los países. Para la desigualdad social se ha utilizado el porcentaje de alfabetización, tugurios, madres adolescentes y niñas económicamente activas. Referente a la contaminación se ha considerado la cantidad de kilotones equivalentes para las variables metano, emisiones de gas invernadero y emisiones de CO2. Entonces, a partir de estos datos nuestra hipótesis es que la esperanza de vida se ve afectada por la desigualdad social y la contaminación ambiental, de manera que se espera que a menor valor de estos indicadores, exista una mejoría con respecto a nuestra variable independiente. De igual manera, el concepto de relevancia estratégica se basa en el trabajo de la encuestadora mundial Mercer (2019) y el Banco Mundial (s/f). Respecto de la primera, esta estudia la esperanza de vida a nivel mundial, en la que evidencia que los mejores niveles se sitúan en Europa; en cuanto a la segunda, analiza los datos del Producto Bruto Interno (PBI) per cápita de los países categorizados por niveles, los cuales usaremos para crear intervalos de ingresos altos y bajos.
+
+La data utilizada y la metadata se pueden encontrar aquí: <https://docs.google.com/spreadsheets/d/e/2PACX-1vRaMNWU7oRKxbQVXTqGfEL_M80w3SpXBC8faxDG_iO_p_hKCCjWDRWr9feRz_TfXw/pub?output=xlsx>
+
+El respositorio de Github con la data y los códigos se puede encontrar aquí: 
+< >
+
+#Carga base de datos y preparación de variables para los clusters
+
+Empezamos cargando la base de datos 
+```{r}
+data <- read.csv("https://docs.google.com/spreadsheets/d/e/2PACX-1vRaMNWU7oRKxbQVXTqGfEL_M80w3SpXBC8faxDG_iO_p_hKCCjWDRWr9feRz_TfXw/pub?output=csv", fileEncoding = "UTF-8")#base de datos
+str(data)
+```
+```{r}
+#convertimos a numéricas las variables que necesitamos
+data$Metano = as.numeric(data$Metano)
+data$gInvernadero= as.numeric(data$gInvernadero)
+data$EsperanzaV= as.numeric(data$EsperanzaV)
+
+str(data)
+```
+
+
+
+Lo siguiente es preparar los datos para el análisis cluster
+```{r}
+#intervalos para determinar si un país es rico o no, según su PIB per cápita
+summary(data$Riqueza)
+data$Riqueza = cut(data$Riqueza, breaks = c(0, 4045,200000),
+include.lowest = T,
+labels = c("No", "Si"))
+
+table(data$Riqueza)
+
+```
+```{r}
+#preparación de variables independientes a seleccionar 
+varsConta=c("CO2","Metano", "gInvernadero")
+varsDesigualdad=c("Analfabetización", "Tugurios", "MadresAdl", "TrabajoNiñas")
+varsRelevancia = c("Riqueza", "Europeo")
+
+summary(data[,c(varsConta,varsDesigualdad)])
+
+#estandarización 
+data[,c(varsDesigualdad)]=scale(data[,c(varsDesigualdad)])
+data[,c(varsConta)]=scale(data[,c(varsConta)])
+
+#de texto a número para la relevancia estratégica 
+a_0_1=function(x){ifelse(x=='No',0,1)}
+data[,varsRelevancia]=lapply(data[,varsRelevancia],a_0_1)
+```
+
+#Situación mundial a través de los clusters 
+
+Observaremos la situación mundial desde el comportamiento de las variables independientes, utilizando análisis de clongomerados, siguiendo la técnica jerárquica. 
+
+Obtenemos tres clusters sugeridos usando la técnica jerárquica aglomerativa (anexo 1) 
+```{r}
+# subset para clusterizar
+paraCluster=data[,c(varsConta ,varsDesigualdad, varsRelevancia)]
+
+# cambio de nombre de fila
+row.names(paraCluster)=data$País
+```
+```{r}
+#librerías para los códigos de clusters 
+library(cluster)
+library(factoextra)
+```
+
+```{r}
+set.seed(123)
+g.dist = daisy(paraCluster, metric="gower")
+res.agnes <- hcut(g.dist, k = 3,hc_func='agnes')
+paraCluster$agnes=res.agnes$cluster
+```
+Para cada cluster, este es el comportamiento de las variables numéricas:
+```{r}
+aggregate(data=paraCluster[,-c(8:9)],.~agnes,FUN=mean)
+```
+
+Recodificamos estas variables de menor a mayor:
+```{r}
+paraCluster$agnes=dplyr::recode(paraCluster$agnes, `1` = 1, `2`=2,`3`=3)
+paraCluster$agnes=as.ordered(paraCluster$agnes)
+```
+
+El dendograma nos muestra el proceso de conglomeración:
+```{r}
+fviz_dend(res.agnes, cex = 0.4, horiz = T)
+```
+#Preparación de latentes
+
+De acuerdo con nuestro marco teórico tenemos tres latentes: desigualdad, relevancia, y contaminación. En base a lo observado en el Anexo 2, tomamos la decisión tratar con dos.
+```{r}
+model0 <- "desigualdad =~ TrabajoNiñas + Analfabetización+ Tugurios + MadresAdl
+contaminación =~ CO2 + Metano + gInvernadero"
+model0
+
+```
+Ahora vemos los resultados del modelo:
+```{r}
+library(lavaan)
+cfa_fit0 <- cfa(model0, data=data, 
+           std.lv=TRUE,  
+           missing="fiml")
+
+
+```
+Preparación de los tests:
+```{r}
+allParamCFA0=parameterEstimates(cfa_fit0,standardized = T)
+allFitCFA0=as.list(fitMeasures(cfa_fit0))
+
+```
+
+Resultados para ver qué tanto concectan las variables con sus latentes
+```{r}
+allParamCFA0[allParamCFA0$op=="=~",c("lhs","rhs","pvalue","std.all")]
+```
+
+El ChiSquare es significativo, ya que el p_value es mayor a 0.05 
+```{r}
+allFitCFA0[c("chisq", "df", "pvalue")] # pvalue>0.05
+```
+El Índice Tucker Lewi es mayor a 0.9
+```{r}
+allFitCFA0$tli
+```
+La Raíz del error cuadrático medio de aproximación es menor a 0.05
+```{r}
+allFitCFA0[c('rmsea.ci.lower','rmsea' ,'rmsea.ci.upper')]
+```
+Los scores:
+```{r}
+lavPredict(cfa_fit0)
+```
+Agregamos la desigualdad y la contaminación como columnas nuevas dentro de la base de datos original.
+```{r}
+allScores=as.data.frame(lavPredict(cfa_fit0))
+```
+```{r}
+library(BBmisc)
+data$desigualdad=normalize(allScores$desigualdad,#agregando desigualdad
+                    method = "range", 
+                    margin=2, # by column
+                    range = c(0, 100))
+
+data$contaminación=normalize(allScores$contaminación,#agregando contaminación
+                    method = "range", 
+                    margin=2, # by column
+                    range = c(0, 100))
+```
+
+
+Creamos la variable latente estratégica mediante un indice aditivo 
+```{r}
+data$relevancia=apply(data[,varsRelevancia],1,sum)
+data$relevancia=as.ordered(data$relevancia)
+```
+
+
+#Regresión y prueba de hipotesis
+
+¿La esperanza de vida se ve afectada por la desigualdad, contaminación y la relevancia estratégica planteada?
+```{r}
+hipotesis=formula(EsperanzaV ~ desigualdad + contaminación + relevancia)
+
+resultado=lm(hipotesis,data = data)
+summary(resultado)
+```
+Revisando los resultados de nuestra regresión lineal, primero se observa que este modelo que sí es válido, pues cuenta con un p-value < 0.05. Además, tiene una variabilidad muy fuerte, ya que explica un 67% la variabilidad de "Y" (esperanza de vida). En relación a las variables independientes, podemos apreciar que la variables desigualdad y contaminación mantienen una relación inversa con nuestra variable dependiente. Esto quiere decir que, a menor contaminación  y desigualdad, mayor sería la esperanza de vida de las personas. Sobre la relevancia estratégica, en los paises ricos y europeos encontramos mayor esperanza de vida, mientras que en los pobres y no europeos vemos lo contrario.   
+
+#Conclusión
+
+En este trabajo nos centramos en tratar de medir los efectos de la relevancia estratégica de los países y las variables latentes "contaminación" y "desigualdad" sobre la esperzana de vida, pues tal cual lo mencionamos al inicio, esta última es de suma importancia en el mundo actual. Ante esto, y después de realizar las diferentes pruebas estadísticas, logramos comprobar nuestra hipótesis inicial, es decir, existe un efecto inverso (negativo) de las independientes sobre la dependiente. En futuras investigaciones sería interesante plantear la exploración de los efectos de diversas variables cualitativas sobre la esperanza de vida, las cuales puedan llegar a construir indicadores interesantes para analizar la situación a nivel mundial.  
+
+#Bibliografía
+
+Bank, W. World Bank Country and Lending Groups. 2019. Recuperado de https://datahelpdesk.worldbank.org/knowledgebase/articles/906519 
+
+Mercer (2019). Ranking Global de Calidad de vida. Recuperado el 10 de diciembre de 2021 de https://www.latam.mercer.com/newsroom/estudio-calidad-de-vida.html 
+
+Mundial, B. (2003). Informe sobre el desarrollo mundial 2004. Banco Mundial.
+https://documents1.worldbank.org/curated/en/830481468139518544/pdf/268860PAPER0SPANISH0WDR020040overview1es.pdf
+
+Organización Mundial de la Salud. (2005). Estadísticas sanitarias mundiales 2005.
+https://www.who.int/healthinfo/statistics/whostat2005es2.pdf
+
+Risco Ipanaqué, L. P. (2016). Determinantes socioeconómicos de la esperanza de vida en el Perú-periodo: 1980-2011.
+
+
+
+##ANEXOS
+
+#ANEXO 1: Exploración del cluster
+
+La data para cluster
+```{r}
+paraCluster=data[,c(varsConta,varsDesigualdad,varsRelevancia)]
+```
+
+1. Saber si se transformará las variables numéricas:
+- Sin modificación:
+```{r}
+boxplot(paraCluster[,c(varsConta,varsDesigualdad)],horizontal=T,las=2,cex.axis=0.3)
+```
+- Tipificado
+```{r}
+boxplot(scale(paraCluster[,c(varsConta,varsDesigualdad)]),horizontal=T,las=2,cex.axis=0.3)
+```
+- Suavizado logarítmicamente
+
+Usemos el anterior aqui:
+```{r}
+boxplot(log(paraCluster[,c(varsConta,varsDesigualdad)]),horizontal=T,las=2,cex.axis=0.3)
+```
+2. Saber cúantos clusters pedir
+```{r}
+library(cluster)
+set.seed(123)
+g.dist = daisy(paraCluster[,], metric="gower")
+```
+
+```{r}
+## para PAM
+set.seed(123)
+library(factoextra)
+fviz_nbclust(paraCluster, pam,diss=g.dist,method = "gap_stat",k.max = 10,verbose = F)
+```
+```{r}
+## PARA JERARQUICO
+set.seed(123)
+fviz_nbclust(paraCluster, hcut,diss=g.dist,method = "gap_stat",k.max = 10,verbose = F,hc_func = "agnes")
+```
+```{r}
+## PARA JERARQUICO
+set.seed(123)
+fviz_nbclust(paraCluster, hcut,diss=g.dist,method = "gap_stat",k.max = 10,verbose = F,hc_func = "diana")
+```
+```{r}
+set.seed(123)
+SUGERIDOS=3
+res.pam=pam(g.dist,k = SUGERIDOS,cluster.only = F)
+res.agnes <- hcut(g.dist, k = SUGERIDOS,hc_func='agnes')
+res.diana <- hcut(g.dist, k = SUGERIDOS,hc_func='diana')
+```
+
+
+Evaluemos el resultado usando el coeficiente de silueta:
+
+-Un caso se ha clusterizado bien si tiene valor positivo
+
+-Un caso es dificilmente clusterizable si es muy cercano a cero
+
+-Un caso está mal clusterizado si es negativo.
+```{r}
+fviz_silhouette(res.pam)
+```
+```{r}
+fviz_silhouette(res.agnes)
+```
+```{r}
+fviz_silhouette(res.diana)
+```
+Utilizaremos agnes, pues tiene valor postivo y cero negativos. 
+
+#ANEXO 2: Exploración de latentes
+
+1. Calculando matriz de correlación
+```{r}
+paraLat=data[,c(varsConta,varsDesigualdad,varsRelevancia)]
+str(paraLat)
+paraLat=as.data.frame(paraLat)
+
+
+library(polycor)
+corMatrix=polycor::hetcor(paraLat)$correlations
+```
+
+2. Explorar correlaciones:
+- Sin evaluar significancia:
+```{r}
+library(ggcorrplot)
+ggcorrplot(corMatrix)
+```
+Ya que vemos bloques correlacionados, hay esperanza de un buen analisis factorial.
+
+3. Verificar si datos permiten factorizar:
+```{r}
+library(psych)
+psych::KMO(corMatrix) 
+```
+4. Verificar si la matriz de correlaciones es adecuada
+-Aquí hay dos pruebas:
+
+Hipotesis nunla: La matríz de correlación es una matríz identidad
+```{r}
+cortest.bartlett(corMatrix,n=nrow(paraLat))$p.value>0.05
+```
+Hipotesis nula: La matríz de correlación es una matríz singular.
+```{r}
+library(matrixcalc)
+is.singular.matrix(corMatrix)
+```
+5.Determinar en cuántos factores o variables latentes podríamos redimensionar la data:
+```{r}
+fa.parallel(paraLat, fm = 'ML', fa = 'fa',correct = T)
+```
+Se sugiere 2; pero esperabamos 3. Tratemos 3.
+
+6. Redimensionar a número menor de factores
+
+Resultado inicial:
+```{r}
+library(GPArotation)
+resfa <- fa(paraLat,
+            nfactors = 3,
+            cor = 'mixed',
+            rotate = "varimax",
+            fm="minres")
+print(resfa$loadings)
+```
+Resultado visual
+```{r}
+fa.diagram(resfa)
+```
+Resultado mejorado, pues hay más de un factor 
+```{r}
+print(resfa$loadings,cutoff = 0.15)
+```
+Resultado visual
+```{r}
+fa.diagram(resfa)
+```
+Reintentemos, con menos columnas:
+```{r}
+resfa <- fa(paraLat[,c(varsConta,varsDesigualdad)],
+            nfactors = 2,
+            cor = 'mixed',
+            rotate = "varimax",
+            fm="minres")
+print(resfa$loadings)
+```
+Nuevo Resultado visual:
+```{r}
+fa.diagram(resfa)
+```
+¿Qué variables aportaron más a los factores? 
+```{r}
+sort(resfa$communality)
+```
+¿Qué variables contribuyen a más de un factor?
+```{r}
+sort(resfa$complexity)
+```
+La exploración no da soporte a tres latentes. Para no afectar el marco teórico, solo usaremos dos; las cuales serán contaminación y desigualdad. 
+
+#ANEXO 3
+
+Librerías utilizadas  
+
+-readxl : para abrir la base de datos desde excel
+
+-cluster: para realizar los diferentes test del análisis conglomerados
+
+-factoextra: para los gráficos en el Anexo 1
+
+-lavaan: para realizar los test del Análisis Factorial Confirmatorio
+
+-BBmisc: para implementar las variables latentes dentro del data frame
+
+-polycor: para observar si hay una correlación policórica entre las variables
+
+-ggcorrplot: para observar la correlación de una Matrix mediante un gráfico
+
+-psych:para ejecutar el KMO y cortest.barlett  
+
+-matrixcalc: para utilizar los test de cálculo de las matrices.
+
+-GPArotation:para el Análisis Exploratorio 
+
+
+
